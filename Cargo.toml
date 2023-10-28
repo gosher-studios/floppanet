@@ -1,0 +1,16 @@
+[package]
+name = "floppanet"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "client"
+path = "src/client.rs"
+
+[[bin]]
+name = "server"
+path = "src/server.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+rand = "0.8"
