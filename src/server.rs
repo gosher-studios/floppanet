@@ -4,7 +4,7 @@ use tokio::task;
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 use rand::Rng;
-use floppanet::{Result, SERVER_PORT, proxy};
+use floppanet::{Result, CLIENT_PORT, SERVER_PORT, proxy};
 
 #[tokio::main]
 async fn main() -> Result {
@@ -26,8 +26,12 @@ async fn handle(ports: Arc<Mutex<HashSet<u16>>>, mut client: TcpStream) -> Resul
   ports.lock().unwrap().insert(port);
   client.write_u16(port).await?;
   let listener = TcpListener::bind(("0.0.0.0", port)).await?;
+  println!("localhost:{} -> {}", port, client.peer_addr().unwrap());
   while let Ok((stream, _)) = listener.accept().await {
-    proxy(&mut client, stream).await?;
+    task::spawn(proxy(
+      stream,
+      TcpStream::connect((client.peer_addr().unwrap().ip(), CLIENT_PORT)).await?,
+    ));
   }
   // todo unconnect people
   Ok(())
