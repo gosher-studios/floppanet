@@ -1,7 +1,7 @@
 use std::error::Error;
 use tokio::io::{self, AsyncRead, AsyncWrite};
 
-pub const CLIENT_PORT: u16 = 1998;
+pub const HANDSHAKE: u64 = u64::from_le_bytes(*b"floppa\0\0");
 pub const SERVER_PORT: u16 = 1999;
 pub const SERVER: &str = "0.0.0.0";
 // pub const SERVER: &str = "net.chxry.me";
