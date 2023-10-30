@@ -1,23 +1,20 @@
 use std::env::args;
-use std::time::Duration;
-use tokio::{task, io, time};
+use tokio::{task, io};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpStream, tcp::OwnedWriteHalf};
+use tokio::net::TcpStream;
 use floppanet::{Result, SERVER, SERVER_PORT, HANDSHAKE};
 
 #[tokio::main]
 async fn main() -> Result {
   match args().nth(1).map(|a| a.parse()) {
     Some(Ok(local_port)) => {
-      let (mut read, mut write) = TcpStream::connect((SERVER, SERVER_PORT))
-        .await?
-        .into_split();
-      write.write_u64(HANDSHAKE).await?;
-      let server_port = read.read_u16().await?;
+      let mut server = TcpStream::connect((SERVER, SERVER_PORT)).await?;
+      server.write_u64(HANDSHAKE).await?;
+      let server_port = server.read_u16().await?;
+      println!("floppanet");
       println!("{}:{} -> localhost:{}", SERVER, server_port, local_port);
-      task::spawn(keep_alive(write));
       loop {
-        let id = read.read_u64().await?;
+        let id = server.read_u64().await?;
         task::spawn(handle(id, local_port));
       }
     }
@@ -36,11 +33,4 @@ async fn handle(id: u64, local_port: u16) -> Result {
   )
   .await?;
   Ok(())
-}
-
-async fn keep_alive(mut server: OwnedWriteHalf) -> Result {
-  loop {
-    time::sleep(Duration::from_secs(10)).await;
-    server.write_u8(0).await?;
-  }
 }

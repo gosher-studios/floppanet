@@ -6,17 +6,25 @@ use tokio::io::{AsyncWriteExt, AsyncReadExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
 use rand::Rng;
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::filter::LevelFilter;
+use tracing::{info, debug, error};
 use floppanet::{Result, SERVER_PORT, HANDSHAKE};
 
 #[tokio::main]
 async fn main() -> Result {
+  tracing_subscriber::registry()
+    .with(console_subscriber::spawn())
+    .with(tracing_subscriber::fmt::layer().with_filter(LevelFilter::DEBUG))
+    .init();
   let state = Arc::new(Mutex::new(State::default()));
   let listener = TcpListener::bind(("0.0.0.0", SERVER_PORT)).await?;
+  info!("Started server on {}", SERVER_PORT);
   while let Ok((stream, _)) = listener.accept().await {
     let state = state.clone();
     task::spawn(async move {
       if let Err(e) = handle(state, stream).await {
-        println!("err: {}", e);
+        error!("{}", e);
       }
     });
   }
@@ -33,33 +41,25 @@ async fn handle(state: Arc<Mutex<State>>, mut client: TcpStream) -> Result {
       );
       s.ports.insert(port);
       drop(s);
-      println!("{} connected on {}", client.peer_addr()?, port);
+      let ip = client.peer_addr()?;
+      info!("{} connected on {}", ip, port);
       client.write_u16(port).await?;
-      let listener = TcpListener::bind(("0.0.0.0", port)).await?;
-      loop {
-        tokio::select! {
-          Ok((stream, _)) = listener.accept() => {
-            let mut s = state.lock().await;
-            let id = rand_cond(rand::random, |i| {
-              *i != HANDSHAKE && !s.connections.contains_key(i)
-            });
-            s.connections.insert(id, stream);
-            client.flush().await?;
-            client.write_u64(id).await?;
-            task::spawn(delete(state.clone(), id));
-          },
-          _ = time::sleep(Duration::from_secs(15)) => {
-            match client.read_to_end(&mut vec![]).await {
-              Ok(0) | Err(_) => {
-                println!("{} disconnected",client.peer_addr()?);
-                state.lock().await.ports.remove(&port);
-                break;
-              },
-              _=> {}
-            }
-          }
+      let (mut read, mut write) = client.into_split();
+      let listen = task::spawn(async move {
+        let listener = TcpListener::bind(("0.0.0.0", port)).await.unwrap();
+        while let Ok((stream, _)) = listener.accept().await {
+          let mut s = state.lock().await;
+          let id = rand_cond(rand::random, |i| {
+            *i != HANDSHAKE && !s.connections.contains_key(i)
+          });
+          s.connections.insert(id, stream);
+          write.write_u64(id).await.unwrap();
+          task::spawn(delete(state.clone(), id));
         }
-      }
+      });
+      let _ = read.read_to_end(&mut vec![]).await;
+      info!("{} disconnected", ip);
+      listen.abort();
     }
     id => {
       if let Some(mut conn) = state.lock().await.connections.remove(&id) {
@@ -72,7 +72,9 @@ async fn handle(state: Arc<Mutex<State>>, mut client: TcpStream) -> Result {
 
 async fn delete(state: Arc<Mutex<State>>, id: u64) {
   time::sleep(Duration::from_secs(10)).await;
-  state.lock().await.connections.remove(&id);
+  if state.lock().await.connections.remove(&id).is_some() {
+    debug!("Removed stale connection {}", id);
+  }
 }
 
 #[derive(Default)]
