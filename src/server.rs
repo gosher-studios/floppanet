@@ -57,7 +57,7 @@ async fn handle(state: Arc<Mutex<State>>, mut client: TcpStream) -> Result {
           task::spawn(delete(state.clone(), id));
         }
       });
-      let _ = read.read_to_end(&mut vec![]).await;
+      let _ = read.read_u8().await;
       info!("{} disconnected", ip);
       listen.abort();
     }
