@@ -53,7 +53,8 @@ async fn handle(state: Arc<Mutex<State>>, mut client: TcpStream) -> Result {
       listen.abort();
     }
     id => {
-      if let Some(mut conn) = state.lock().await.connections.remove(&id) {
+      let conn = state.lock().await.connections.remove(&id);
+      if let Some(mut conn) = conn {
         io::copy_bidirectional(&mut client, &mut conn).await?;
       }
     }
