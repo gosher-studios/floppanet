@@ -9,12 +9,12 @@ async fn main() -> Result {
   match args().nth(1).map(|a| a.parse()) {
     Some(Ok(local_port)) => {
       let mut server = TcpStream::connect((SERVER, SERVER_PORT)).await?;
-      server.write_u64(HANDSHAKE).await?;
+      server.write_u128(HANDSHAKE).await?;
       let server_port = server.read_u16().await?;
       println!("floppanet");
       println!("{}:{} -> localhost:{}", SERVER, server_port, local_port);
       loop {
-        let id = server.read_u64().await?;
+        let id = server.read_u128().await?;
         task::spawn(handle(id, local_port));
       }
     }
@@ -24,9 +24,10 @@ async fn main() -> Result {
   Ok(())
 }
 
-async fn handle(id: u64, local_port: u16) -> Result {
+async fn handle(id: u128, local_port: u16) -> Result {
   let mut stream = TcpStream::connect((SERVER, SERVER_PORT)).await?;
-  stream.write_u64(id).await?;
+  stream.write_u128(id).await?;
+  stream.flush().await?;
   io::copy_bidirectional(
     &mut stream,
     &mut TcpStream::connect(("0.0.0.0", local_port)).await?,
